@@ -135,8 +135,8 @@ void main(uvec3 thread_id)
 
     // Calculate near and far depth of cluster in view space
     // Use the 𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s} equation to get depth subdivision
-    float plane_near = -z_near * pow(z_far / z_near, float(thread_id.z) / cluster->num_clusters_z);
-    float plane_far = -z_near * pow(z_far / z_near, float(thread_id.z + 1) / cluster->num_clusters_z);
+    float plane_near = -z_near * pow(z_far / z_near, float(thread_id.z) / num_clusters_z);
+    float plane_far = -z_near * pow(z_far / z_near, float(thread_id.z + 1) / num_clusters_z);
 
     // Finding the min/max intersection points to the cluster near/far plane
     // Eye position is zero in view space
@@ -153,19 +153,70 @@ void main(uvec3 thread_id)
 }
 ```
 
-This shader is run once for each cluster and obtains the AABB for said cluster. At first we create a tile with min and max points, just like in Tiled Shading. Next we convert those points to view space. Then we calculate the near and far planes of the cluster using the depth subdivision equation we have chosen. And after we check for intersection points with the far and near planes of the cluster to get the corners of the AABB encompassing the cluster. Lastly, we check which points are the min and the max to save it into our buffer of clusters. That's it, we have just created our clusters!
+This shader is run once for each cluster and obtains the AABB for said cluster. At first we create a tile with min and max points, just like in Tiled Shading. Next we convert those points to view space. Then we calculate the near and far planes of the cluster using the depth subdivision equation we have chosen. And after we check for intersection points with the far and near planes of the cluster to get the corners of the AABB encompassing the cluster. Lastly, we check which points are the min and the max of the AABB to save it into our buffer of clusters. That's it, we have just created our clusters!
 
 Since we store the cluster AABBs in view space, they will be valid as long as the view frusum stays the same shape. That means we can run this shader once at the beginning and only recalculate when any changes to the FOV or other view field altering properties are made.
 
 
 ### Culling clusters <a name="implementation2"></a>
-...
+
+This step is technically not needed, since we can just check lights against all clusters we have. But this isn't optimal and would slow down the light assignment pass considerably. The drawback of culling clusters is when using the forward shading path, we need to do a Z-Prepass to obtain a depth texture.
+
+To cull clusters we can loop over all the pixels of depth texture in parallel, compute the cluster index from the depth and pixel position and set the cluster to active. We can store what clusters are active in a buffer of booleans with the same number of elements as there are clusters. The code for computing this pass can look something along these lines:
+
+```glsl
+// Get and linearize depth
+uint get_cluster_index(vec2 pixel_position, float linear_depth)
+{
+    uint depth_slice = uint(max(log2(linear_depth) * depth_slice_scale + depth_slice_bias, 0.0f));
+
+    uvec3 cluster = uvec3(pixel_position / tile_size, depth_slice);
+    uint cluster_index = cluster.x +
+                         cluster.y * num_clusters_x +
+                         cluster.z * (num_clusters_x * num_clusters_y);
+
+    return cluster_index;
+}
+
+void main(uvec3 thread_id)
+{
+    // Get and linearize depth
+    vec2 screen_coord = vec2(thread_id.xy) / screen_dimensions;
+    float depth = depth_texture.Sample(screen_coord);
+    float linear_depth = linearize_depth(depth);
+
+    // Get cluster that the current pixel is inside of
+    uint cluster_index = get_cluster_index(vec2(thread_id.xy), linear_depth);
+
+    active_clusters[cluster_index] = true;
+}
+```
+
+Here inside the `get_cluster_index` function we apply equation (2) from the building clusters section for calculating the depth slice of the cluster from a linear depth value.
+
 
 ### Compacting clusters <a name="implementation3"></a>
-...
+
+Before getting to the light assignment pass we will compact our active clusters list into a smaller list of indices. This way we will incease the efficiency during the light assignment pass, by only looping over the actual active clusters, instead of looping over all of them and ignoring the inactive ones. Here is what such a process would look like in code:
+
+```glsl
+void main(uint thread_id)
+{
+    // We only store clusters that are currently active
+    if (active_clusters[thread_id])
+    {
+        uint cluster_index = atomicAdd(num_global_active_clusters, 1);
+        compact_active_clusters[cluster_index] = thread_id;
+    }
+}
+```
+
+We loop over all the elements of the `active_clusters` list and add the index value to another list if the cluster is active. Using atomic operations we also keep track how many clusters are in our `compact_active_clusters` list. That way we can use `num_global_active_clusters` to dispatch our light assignment shader indirectly for the exact number of active clusters.
+
 
 ### Light assignment <a name="implementation4"></a>
-...
+
+
 
 
 ## Conclusion <a name="conclusion"></a>
