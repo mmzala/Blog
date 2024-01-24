@@ -119,7 +119,7 @@ In the end I have chosen to use AABBs as my cluster shape. Because of the time c
 Now that we have both chosen the depth subdivision and our cluster shape, we can get to writing our compute shader code for cluster generation. Due to the size of the code I have removed some parts, but the most important concepts are still there:
 
 ```glsl
-void main(uint3 thread_id)
+void main(uvec3 thread_id)
 {
     uint cluster_index = thread_id.x +
                          thread_id.y * num_clusters_x +
