@@ -11,7 +11,7 @@ For the past 2 months I have been working on a Clustered Renderer for the PlaySt
 2. [Implementation](#implementation)
     1. [Building clusters](#implementation1)
     2. [Culling clusters](#implementation2)
-    2. [Compacting clusters](#implementation3)
+    3. [Compacting clusters](#implementation3)
     4. [Light assignment](#implementation4)
 3. [Conclusion](#conclusion)
     1. [Further reading](#conclusion1)
@@ -48,10 +48,115 @@ There are number of great benefits about using this rendering technique. You can
 
 
 ## Implementation <a name="implementation"></a>
-...
+
+At the center the Clustered Shading algorithm creates data structures which subdivide the view frustum into clusters and then assigns lights to those clusters. [2] [The original algorithm of Clustered Shading](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) from has 5 steps to it:
+
+1. Building clusters
+2. Render scene to G-Buffers or Z-Prepass
+3. Culling clusters
+4. Assigning lights to clusters
+5. Shading samples
+
+I will go step by step and explain how I implemented every step of the algorithm. I have split up the Culling Clusters step into 2, finding visible clusters (culling clusters) and compacting clusters. I also won't cover steps 2 and 5, because those steps depend on the shading model you are using.
+
+The implementation you will be seeing throughout this section is written in compute shaders. Although the Clustered Shading algorithm can be fully implemented on the CPU, I chose to do it on the GPU. With the foreword out of the way, let's begin!
+
 
 ### Building clusters <a name="implementation1"></a>
-...
+
+To create the clusters we will be using the same way the tile are created for Tiled Shading. We will add to that by subdividing the tiles along the depth axis. We will also store the samples in view space, instead of screen space. This prevents depth discontinuities and performence issues when pixels are moving. First we will look at subdividing the depth to achieve 3D tiles, in other words clusters.
+
+#### Subdividing depth
+
+[2] [The original Clustered Shading paper](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) showed 3 subdivision schemes. The first way of subdividing depth the paper described is to do it in normalized device coordinates into a set of uniform segments. However, because of non-linearity of NDC, this subdivision results in uneven cluster dimensions. Which means clusters close to the camera become very thin and those far away very long. We would generally like for the clusters to not have too many lights and for them to be evenly distributed to achieve best results.
+
+![Uniform NDC subdivision.](assets/images/ZSubdivision/UniformNDC.png)
+
+The next subdivision the paper showed is uniform subdivision in view space. But this actually produces the opposite artifact, where clusters near the camera are long and narrow and those far away are wide and flat.
+
+![Uniform view space subdivision.](assets/images/ZSubdivision/UniformVS.png)
+
+The third subdivision of the paper was an exponential subdivision in view space, which the paper settled on. By spacing the divisions exponentially, we achieve self-similar subdivisions, such that the clusters become as cubical as possible. Which works nicely when representing clusters as AABB's and gets rid of the problems the previous 2 approches had.
+
+![Exponential view space subdivision.](assets/images/ZSubdivision/ExponentialVS.png)
+
+But in the end I decided to use another subdivision scheme. When researching this topic I came across how [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) has done depth subdivision for their clusters:
+
+$$
+𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s}
+$$
+
+Here "𝑍" represents the depth, "𝑁𝑒𝑎𝑟" and "𝐹𝑎𝑟" represent the near and far planes. Unfortunately I don't have a nice way of showing this subdivision for now, but the formula is simple enough to be able to visualize it.
+
+This subdivision is easier to calculate than the 3rd approach when creating clusters. But also another major advantage of this equation is revealed when you solve it for the slice:
+
+$$
+𝑆𝑙𝑖𝑐𝑒 = log(Z) × {𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s \over log(FarZ / 𝑁𝑒𝑎𝑟Z)} - {num Slices × log(NearZ) \over log(FarZ / NearZ)}
+$$
+
+The advantage here is that, when we want to get the slice using depth, we use the equation above, which aside from "log(Z)" is a constant and can be pre-calculated. This means we can get the slice using only a log, a multiplication and an addition operation.
+
+#### Chosing the shape of the clusters
+
+Now that we have chosen our subdivision scheme, it's time to look at what shape our clusters should be. Ideally the shape should be as simple as possible while encompassing the whole cluster, since we need to assign lights to clusters by doing a collision check between the light and the clusers. Also we have to keep it compact so it doesn't eat up too much bandwidth.
+
+The easy solution would be to use Axis Aligned Bounding Boxes (AABBs). We can represent such a shape with only 2 float3's, a min and max point, which makes this solution good regarding bandwidth. In this case, in order to assign lights to clusters, we need to check collision between a cube and a sphere, which also keeps the algorithm pretty simple. But there is an issue with using AABBs.
+
+![AABB clusters overlap.](assets/images/AABBClusterOverlap.png)
+
+ When we visualize the clusters in 2D, we can see that the AABBs need to overlap to cover the whole cluster. This makes AABBs not that accurate and leads to lights being assigned to clusters that don't need to be assigned to and clusters not being culled away while there is no need for them. That means that more pixels can potentially take into account lights that don't contribute to the pixel's final color.
+
+ This issue can be solved by using planes to represent the clusters, which [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) did. We can use 4 planes to represent 1 cluster, where a plane in code is made out of a float3 normal and a float disance to origin. This would make a cluster take up a bit more memory. In total 16 floats, instead of 6 float when using AABB's. *In actuality you also need a near and far distances for each cluster when doing the light assignment step for checking collisions, which would add another 2 floats, but those can be computed dynamically from the 4 planes we are storing.* Such clusters would look like this:
+
+![Plane clusters.](assets/images/PlaneClusters.png)
+
+You can see the overlap is gone, but you need to store more memory. Both cluster creation and the light assignment steps also become more complicated, since you have to check collisions with clusters based on their planes.
+
+In the end I have chosen to use AABBs as my cluster shape. Because of the time constraints I had for this project I unfortunately couldn't implement plane based clusters as well.
+
+#### Implementation of cluster creation
+
+Now that we have both chosen the depth subdivision and our cluster shape, we can get to writing our compute shader code for cluster generation. Due to the size of the code I have removed some parts, but the most important concepts are still there:
+
+```glsl
+void main(uint3 thread_id)
+{
+    uint cluster_index = thread_id.x +
+                         thread_id.y * num_clusters_x +
+                         thread_id.z * (num_clusters_x * num_clusters_y);
+                         
+    // Calculate the min and max point in screen space
+    vec4 min_point_ss = vec4(thread_id.xy * tile_size, 1.0f, 1.0f); // Bottom left
+    vec4 max_point_ss = vec4(vec2(thread_id.xy + 1) * tile_size, 1.0f, 1.0f); // Top Right
+
+    // Convert points to view space
+    vec3 min_point_vs = screen_to_view(min_point_ss).xyz;
+    vec3 max_point_vs = screen_to_view(max_point_ss).xyz;
+
+    // Calculate near and far depth of cluster in view space
+    // Use the 𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s} equation to get depth subdivision
+    float plane_near = -z_near * pow(z_far / z_near, float(thread_id.z) / cluster->num_clusters_z);
+    float plane_far = -z_near * pow(z_far / z_near, float(thread_id.z + 1) / cluster->num_clusters_z);
+
+    // Finding the min/max intersection points to the cluster near/far plane
+    // Eye position is zero in view space
+    const vec3 eye_position = vec3(0.0f);
+
+    // Find intersections points with the cluster to create an AABB
+    vec3 min_point_near = intersect_line_to_z_plane(eye_position, min_point_vs, plane_near);
+    vec3 min_point_far  = intersect_line_to_z_plane(eye_position, min_point_vs, plane_far);
+    vec3 max_point_near = intersect_line_to_z_plane(eye_position, max_point_vs, plane_near);
+    vec3 max_point_far  = intersect_line_to_z_plane(eye_position, max_point_vs, plane_far);
+
+    clusters[cluster_index].min = min(min(min_point_near, min_point_far), min(max_point_near, max_point_far));
+    clusters[cluster_index].max = max(max(min_point_near, min_point_far), max(max_point_near, max_point_far));
+}
+```
+
+This shader is run once for each cluster and obtains the AABB for said cluster. At first we create a tile with min and max points, just like in Tiled Shading. Next we convert those points to view space. Then we calculate the near and far planes of the cluster using the depth subdivision equation we have chosen. And after we check for intersection points with the far and near planes of the cluster to get the corners of the AABB encompassing the cluster. Lastly, we check which points are the min and the max to save it into our buffer of clusters. That's it, we have just created our clusters!
+
+Since we store the cluster AABBs in view space, they will be valid as long as the view frusum stays the same shape. That means we can run this shader once at the beginning and only recalculate when any changes to the FOV or other view field altering properties are made.
+
 
 ### Culling clusters <a name="implementation2"></a>
 ...
@@ -74,3 +179,4 @@ There are number of great benefits about using this rendering technique. You can
 - [1] [*Ola Olsson and Ulf Assarsson. Tiled Shading, 2011*](https://www.cse.chalmers.se/~uffe/tiled_shading_preprint.pdf)
 - [2] [*Ola Olsson, Markus Billeter and Ulf Assasson, Clustered Deferred and Forward Shading, 2012*](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf)
 - [3] [Ángel Ortiz, A Primer On Efficient Rendering Algorithms & Clustered Shading, 2018](https://www.aortiz.me/2018/12/21/CG.html)
+- [4] [Tiago Sousa, Doom 2016 "The devil is in the details" Siggraph presentation, 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf)
