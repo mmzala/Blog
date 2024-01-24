@@ -38,10 +38,13 @@ In [2] [*Clustered Shading (*Ola Olsson, Markus Billeter and Ulf Assasson, Clust
 
 ![Clustered Shading visualization.](assets/images/ClusteredShadingVisualization.png)
 
-TODO...
+In the Tiled Shading visualization you can see that lights effects all the meshes in the depth. For example the red light, even though it is close to the camera, it also is being accounted for the mesh all the way in the back. In the Clustered Shading visualization you can see that we don't have that issue anymore.
+
+There are number of great benefits about using this rendering technique. You can choose to take the forward rendering or deffered rendering path. We have also changed the classic forward/deffered algorithmic complexity from `O(light * mesh)` to `O(light + mesh)`, since with clustered shading we only perform shading using relevant lights per mesh. There are a few more benefits which I will discuss in the next section.
 
 ### Comparing rendering algorithms <a name="theory2"></a>
-...
+
+// TODO
 
 
 ## Implementation <a name="implementation"></a>
