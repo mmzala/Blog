@@ -2,7 +2,7 @@
 layout: default
 ---
 
-For the past 2 months, during my studies at Breda University of Applied Siences as a year 2 programming student, I have been working on a Clustered Renderer for the PlayStation 5, with the aim to learn more about rendering techinques and PlayStation's AGC API. Throughout this blog post I will share my findings about my research and implementation of the Clustered Shading algorithm. Unfortuantely I can't share the source code of my project because AGC is a closed source API under an NDA. Even though that's the case, I will share some pseudo code relevant to the subject. So let's get to it!
+For the past 2 months, during my studies at [Breda University of Applied Sciences](https://www.buas.nl) as a year 2 programming student, I have been working on a Clustered Renderer for the PlayStation 5, with the aim to learn more about rendering techinques and PlayStation's AGC API. Throughout this blog post I will share my findings about my research and implementation of the Clustered Shading algorithm. Unfortuantely I can't share the source code of my project because AGC is a closed source API under an NDA. Even though that's the case, I will share some pseudo code relevant to the subject. So let's get to it!
 
 ## Table of contents
 1. [Theory](#theory)
