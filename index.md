@@ -28,7 +28,7 @@ There are countless of optimizations one could implement. However now we will be
 
 ### What is Clustered Shading? <a name="theory1"></a>
 
-The Clustered Shading algorithm is based off of [1] [Tiled Shading, researched by Ola Olsson and Ulf Assarsson](https://www.cse.chalmers.se/~uffe/tiled_shading_preprint.pdf). The Tiled Shading algorithm efficiently culls lights for both forward and deffered systems. The idea is that we subdivide the screen into tiles and build a buffer which keeps track of what lights affects the geometry within a given tile. During the shading pass we compute only the lights within the current tile. This significantly reduces the number of lights that we need to compute for. [3] [Ángel Ortiz, who also made a blog post about clustered shading, created great visualizations for Tiled and Clustered Shading, which I have used. Check out his blog post as well!](https://www.aortiz.me/2018/12/21/CG.html) Here is a visualization of assigning lights into tiles:
+The Clustered Shading algorithm is based off of [1] [Tiled Shading, researched by Ola Olsson and Ulf Assarsson](https://www.cse.chalmers.se/~uffe/tiled_shading_preprint.pdf). The Tiled Shading algorithm efficiently culls lights for both forward and deferred systems. The idea is that we subdivide the screen into tiles and build a buffer which keeps track of what lights affects the geometry within a given tile. During the shading pass we compute only the lights within the current tile. This significantly reduces the number of lights that we need to compute for. [3] [Ángel Ortiz, who also made a blog post about clustered shading, created great visualizations for Tiled and Clustered Shading, which I have used. Check out his blog post as well!](https://www.aortiz.me/2018/12/21/CG.html) Here is a visualization of assigning lights into tiles:
 
 ![Tiled Shading visualization.](assets/images/TiledShadingVisualization.png)
 
@@ -44,8 +44,27 @@ There are number of great benefits about using this rendering technique. You can
 
 ### Comparing rendering algorithms <a name="theory2"></a>
 
+Even though I presented Clustered Shading as a replacement for Tiled Shading and a technique which improves forward and deferred shading significantly. That doesn't mean the older techniques don't have their own uses or are obsolete. Every algorithm has its own overhead and complexity. So which algorithm suits you best should be decided by your own circumstances and requirements. The [6] [Real-Time Rendering book](https://www.realtimerendering.com/) has a table comparing some aspects of rendering algorithms.
 
+|                   | Forward | Deferred | Tile/Clust. Deferred | Tile/Clust. Forawrd |
+| :---------------- | :-----: | :------: | :------------------: | :-----------------: |
+| Geometry Passes   |   1     | 1        | 1                    | 1-2                 |
+| Light Passes      |   0     | 1/light  | 1                    | 1                   |
+| Transparency      |  yes    | no       | no                   | yes                 |
+| MSAA              |  yes    |   no     | no                   | yes                 |
+| Bandwidth         |  low    | high     | medium               | low                 |
+| Register pressure |  high   | low      | possibly low         | possibly high       |
+| Vary shading      |  easy   | hard     | medium               | easy                |
 
+As we can see in the table above every rendering technique has its pros and cons. Simple forward rendering easily supports transparency, MSAA and enables to have multiple shading models. But it has a really high register pressure, which translates to shader complexity and indicates how efficiently the technique is making use of GPU resources.
+
+Simple deferred shading fixes this issue, by having a geometry pass and a light pass. But while it has low register pressure, the problem becomes the bandwidth because you have to store/load information into/from textures. The table also states that there is no support for transperancy and MSAA, which is not technically true. But it comes at a significantly higher cost when compared to forward shading.
+
+Then we have Tiled/Clustered Deferred/Forward variants, which have similar pros and cons to their previous counterparts. But optimize their weak points in bandwidth and register pressure respectivly.
+
+Another thing to take into account is that [6] [the growth of GPU's compute capabilities is continually outpacing memory bandwidth growth](https://www.youtube.com/embed/uEtI7JRBVXk?si=IUPD75INWEhYRZ-o). That means that compute-bound algorithms, like forward variants of Tiled and Clustered Shading, should be more interesting when looking for future-proof rendering algorithms, unlike algorithms bottlenecked by bandwidth.
+
+Now that we have discussed what Clustered Shading is and compared different rendering algorithms, we are ready to delve into implementing the clustering algorithm!
 
 ## Implementation <a name="implementation"></a>
 
@@ -339,6 +358,8 @@ During [4] [Siggraph 2016, Tiago Sousa and Jean Geffroy did a talk about graphic
 - [3] [Ángel Ortiz, A Primer On Efficient Rendering Algorithms & Clustered Shading, 2018](https://www.aortiz.me/2018/12/21/CG.html)
 - [4] [Tiago Sousa and Jean Geffroy, Doom 2016 "The devil is in the details" Siggraph presentation, 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf)
 - [5] [*Jeremiah van Oosten, Volume Tiled Forward Shading, 2017*](https://www.3dgep.com/volume-tiled-forward-shading/)
+- [6] [*Real-Time Rendering, Fourth Edition, 2018*](https://www.realtimerendering.com/)
+- [7] [*Ola Olsson, Managing many lights in real-time with clustered shading, 2016*](https://www.youtube.com/embed/uEtI7JRBVXk?si=IUPD75INWEhYRZ-o)
 
 ---
 *If you have gotten this far I would like to thank you for spending your time to read my first ever blog post. Feel free to reach out through my e-mail (marcinzal24@gmail.com) with any questions or comments. But you can also find me on [LinkedIn](https://www.linkedin.com/in/marcin-zalewski-6a17231a4/) if you would rather reach out to me that way.*
