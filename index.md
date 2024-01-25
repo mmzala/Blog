@@ -15,7 +15,7 @@ For the past 2 months, during my studies at [Breda University of Applied Science
     4. [Light assignment](#implementation4)
 3. [Conclusion](#conclusion)
     1. [Further reading](#conclusion1)
-    2. [Credits](#conclusion2)
+    2. [Sources](#conclusion2)
 
 ## Theory <a name="theory"></a>
 
@@ -305,14 +305,37 @@ When this compute shader finishes running we will have our data structures ready
 
 
 ## Conclusion <a name="conclusion"></a>
-...
+
+Now we have completed our understanding and implementation of the Clustered Shading algorithm. Although there are always ways to squeeze out more performance out of a rendering algorithm, I decided to stop here due to the time constrains. But if you are interested in more, I will point out some more optimization techniques and futher improvements in the next section.
 
 ### Further reading <a name="conclusion1"></a>
-...
 
-### Credits <a name="conclusion2"></a>
+The original [2] [Clustered Shading](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) paper also talks about computing a Bouding Volume Heiarchy (BVH) over the lights in the scene. This greatly improves the light assignment pass, because instead of doing the brute-force check of every active cluster against every light in the scene, only the lights that are inside of the BVH node that also overlap with the cluster need to be checked. This reduces the asymptotic running time of the light assignment pass from `O(n*m)` to `O(n*log(32*m))`, where `n` is the number of active clusters and `m` is the number of active lights in the scene.
+
+If you want to investigate such a BVH further, I recommend [5] [Jeremiah van Oosten's](https://www.3dgep.com/volume-tiled-forward-shading/) thesis, where he goes in depth about optimizing the clustered shading algorithm. Here is a video he made where he shows his findings about how a BVH can significantly increase the performance and allow for millions of dynamic light sources in the scene.
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/nyItqF3sM84?si=WGWsmgcdlqrmxOzM" title="YouTube video player" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
+Another thing the [2] [original paper](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) touches upon is additionaly to positions, also using normals in the clustering algorithm. Clustering on normals improves culling of lights during the light assignment pass. This is because when using normals, we can additionally do back-face culling of light against clusters. This leaves out lights that are behind meshes and do not contribute light during the shading pass.
+
+![Data structures](assets/images/PositionAndNormalBasedClustering.jpg)
+
+One of the authors of the original paper, Ola Olsson, also did some talks about Clustered Shading and its uses. One of the more interesting talks can be found on Youtube where aside from going into detail of Clustered Shading, he also talks about efficient shadows for many lights.
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/uEtI7JRBVXk?si=IUPD75INWEhYRZ-o" title="YouTube video player" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
+During [4] [Siggraph 2016, Tiago Sousa and Jean Geffroy did a talk about graphics in Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf). There they touch upon how they implemented and used Clustered Shading in Doom 2016, to not only cull lights, but also decals and probes. They also talk about more interesting details regarding their game.
+
+
+### Sources <a name="conclusion2"></a>
 
 - [1] [*Ola Olsson and Ulf Assarsson. Tiled Shading, 2011*](https://www.cse.chalmers.se/~uffe/tiled_shading_preprint.pdf)
 - [2] [*Ola Olsson, Markus Billeter and Ulf Assasson, Clustered Deferred and Forward Shading, 2012*](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf)
 - [3] [Ángel Ortiz, A Primer On Efficient Rendering Algorithms & Clustered Shading, 2018](https://www.aortiz.me/2018/12/21/CG.html)
-- [4] [Tiago Sousa, Doom 2016 "The devil is in the details" Siggraph presentation, 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf)
+- [4] [Tiago Sousa and Jean Geffroy, Doom 2016 "The devil is in the details" Siggraph presentation, 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf)
+- [5] [*Jeremiah van Oosten, Volume Tiled Forward Shading, 2017*](https://www.3dgep.com/volume-tiled-forward-shading/)
+
+---
+*If you have gotten this far I would like to thank you for spending your time to read my first ever blog post. Feel free to reach out through my e-mail (marcinzal24@gmail.com) with any questions or comments. But you can also find me on [LinkedIn](https://www.linkedin.com/in/marcin-zalewski-6a17231a4/) if you would rather reach out to me that way.*
+
+![Breda University of Applied Siences](assets/images/BUASLogo.png)
