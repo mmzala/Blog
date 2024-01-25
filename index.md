@@ -44,12 +44,12 @@ There are number of great benefits about using this rendering technique. You can
 
 ### Comparing rendering algorithms <a name="theory2"></a>
 
-// TODO
+
 
 
 ## Implementation <a name="implementation"></a>
 
-At the center the Clustered Shading algorithm creates data structures which subdivide the view frustum into clusters and then assigns lights to those clusters. [2] [The original algorithm of Clustered Shading](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) from has 5 steps to it:
+At the center the Clustered Shading algorithm creates data structures which subdivide the view frustum into clusters and then assigns lights to those clusters. [2] [The original algorithm of Clustered Shading](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) has 5 steps to it:
 
 1. Building clusters
 2. Render scene to G-Buffers or Z-Prepass
@@ -82,13 +82,17 @@ The third subdivision of the paper was an exponential subdivision in view space,
 
 But in the end I decided to use another subdivision scheme. When researching this topic I came across how [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) has done depth subdivision for their clusters:
 
-$$ 𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s} $$
+$$ 
+𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s} 
+$$
 
 Here "𝑍" represents the depth, "𝑁𝑒𝑎𝑟" and "𝐹𝑎𝑟" represent the near and far planes. Unfortunately I don't have a nice way of showing this subdivision for now, but the formula is simple enough to be able to visualize it.
 
 This subdivision is easier to calculate than the 3rd approach when creating clusters. But also another major advantage of this equation is revealed when you solve it for the slice:
 
-$$ 𝑆𝑙𝑖𝑐𝑒 = log(Z) × {𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s \over log(FarZ / 𝑁𝑒𝑎𝑟Z)} - {num Slices × log(NearZ) \over log(FarZ / NearZ)} $$
+$$ 
+𝑆𝑙𝑖𝑐𝑒 = log(Z) × {𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s \over log(FarZ / 𝑁𝑒𝑎𝑟Z)} - {num Slices × log(NearZ) \over log(FarZ / NearZ)} 
+$$
 
 The advantage here is that, when we want to get the slice using depth, we use the equation above, which aside from "log(Z)" is a constant and can be pre-calculated. This means we can get the slice using only a log, a multiplication and an addition operation.
 
@@ -325,7 +329,7 @@ One of the authors of the original paper, Ola Olsson, also did some talks about 
 
 <iframe width="560" height="315" src="https://www.youtube.com/embed/uEtI7JRBVXk?si=IUPD75INWEhYRZ-o" title="YouTube video player" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
-During [4] [Siggraph 2016, Tiago Sousa and Jean Geffroy did a talk about graphics in Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf). There they touch upon how they implemented and used Clustered Shading in Doom 2016, to not only cull lights, but also decals and probes. They also talk about more interesting details regarding their game.
+During [4] [Siggraph 2016, Tiago Sousa and Jean Geffroy did a talk about graphics in Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf). There they touch upon how they implemented and used Clustered Shading in Doom 2016, to not only cull lights, but also decals and probes. They also talk about more interesting details regarding their graphics in-game.
 
 
 ### Sources <a name="conclusion2"></a>
