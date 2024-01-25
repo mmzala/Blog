@@ -82,17 +82,13 @@ The third subdivision of the paper was an exponential subdivision in view space,
 
 But in the end I decided to use another subdivision scheme. When researching this topic I came across how [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) has done depth subdivision for their clusters:
 
-$$
-𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s}
-$$
+$$ 𝑍𝑆𝑙𝑖𝑐𝑒 = 𝑁𝑒𝑎𝑟Z × (𝐹𝑎𝑟Z / 𝑁𝑒𝑎𝑟Z)^{𝑠𝑙𝑖𝑐𝑒 / 𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s} $$
 
 Here "𝑍" represents the depth, "𝑁𝑒𝑎𝑟" and "𝐹𝑎𝑟" represent the near and far planes. Unfortunately I don't have a nice way of showing this subdivision for now, but the formula is simple enough to be able to visualize it.
 
 This subdivision is easier to calculate than the 3rd approach when creating clusters. But also another major advantage of this equation is revealed when you solve it for the slice:
 
-$$
-𝑆𝑙𝑖𝑐𝑒 = log(Z) × {𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s \over log(FarZ / 𝑁𝑒𝑎𝑟Z)} - {num Slices × log(NearZ) \over log(FarZ / NearZ)}
-$$
+$$ 𝑆𝑙𝑖𝑐𝑒 = log(Z) × {𝑛𝑢𝑚 S𝑙𝑖𝑐𝑒s \over log(FarZ / 𝑁𝑒𝑎𝑟Z)} - {num Slices × log(NearZ) \over log(FarZ / NearZ)} $$
 
 The advantage here is that, when we want to get the slice using depth, we use the equation above, which aside from "log(Z)" is a constant and can be pre-calculated. This means we can get the slice using only a log, a multiplication and an addition operation.
 
@@ -113,6 +109,11 @@ The easy solution would be to use Axis Aligned Bounding Boxes (AABBs). We can re
 You can see the overlap is gone, but you need to store more memory. Both cluster creation and the light assignment steps also become more complicated, since you have to check collisions with clusters based on their planes.
 
 In the end I have chosen to use AABBs as my cluster shape. Because of the time constraints I had for this project I unfortunately couldn't implement plane based clusters as well.
+
+#### Dimensions for our cluster grid
+
+One small thing we have to discuss before we talk about the implementation in code is, how many subdivisions do we want in our frustum. I have not tested yet what the optimal dimensions are for the clustering grid, but we know we don't want a too small of a grid, since that wouldn't really subdivide our frustum for light culling nicely and clustering wouldn't bring much performance with it as it should. So in the end I have chosen to use the same dimensions as used in [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf). Those dimensions are 16x9x24 (width/height/depth), this number is also close to my monitors aspect ratio. But in thruth, the size of the grid is up to you.
+
 
 #### Implementation of cluster creation
 
@@ -312,7 +313,7 @@ Now we have completed our understanding and implementation of the Clustered Shad
 
 The original [2] [Clustered Shading](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) paper also talks about computing a Bouding Volume Heiarchy (BVH) over the lights in the scene. This greatly improves the light assignment pass, because instead of doing the brute-force check of every active cluster against every light in the scene, only the lights that are inside of the BVH node that also overlap with the cluster need to be checked. This reduces the asymptotic running time of the light assignment pass from `O(n*m)` to `O(n*log(32*m))`, where `n` is the number of active clusters and `m` is the number of active lights in the scene.
 
-If you want to investigate such a BVH further, I recommend [5] [Jeremiah van Oosten's](https://www.3dgep.com/volume-tiled-forward-shading/) thesis, where he goes in depth about optimizing the clustered shading algorithm. Here is a video he made where he shows his findings about how a BVH can significantly increase the performance and allow for millions of dynamic light sources in the scene.
+If you want to investigate such a BVH further, I recommend [5] [Jeremiah van Oosten's](https://www.3dgep.com/volume-tiled-forward-shading/) thesis, where he goes in depth about optimizing the Clustered Shading algorithm. Here is a video he made where he shows his findings about how a BVH can significantly increase the performance and allow for millions of dynamic light sources in the scene.
 
 <iframe width="560" height="315" src="https://www.youtube.com/embed/nyItqF3sM84?si=WGWsmgcdlqrmxOzM" title="YouTube video player" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
