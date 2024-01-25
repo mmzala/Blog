@@ -2,7 +2,7 @@
 layout: default
 ---
 
-For the past 2 months I have been working on a Clustered Renderer for the PlayStation 5 with the aim to learn more about rendering techinques and PlayStation's AGC API. Throughout this blog post I will share my findings about my research and implementation of the Clustered Shading algorithm. Unfortuantely I can't share the source code of my project because AGC is a closed source API under an NDA. Even though that's the case, I will share some pseudo code relevant to the subject. So let's get to it!
+For the past 2 months, during my studies at Breda University of Applied Siences as a year 2 programming student, I have been working on a Clustered Renderer for the PlayStation 5, with the aim to learn more about rendering techinques and PlayStation's AGC API. Throughout this blog post I will share my findings about my research and implementation of the Clustered Shading algorithm. Unfortuantely I can't share the source code of my project because AGC is a closed source API under an NDA. Even though that's the case, I will share some pseudo code relevant to the subject. So let's get to it!
 
 ## Table of contents
 1. [Theory](#theory)
@@ -216,7 +216,92 @@ We loop over all the elements of the `active_clusters` list and add the index va
 
 ### Light assignment <a name="implementation4"></a>
 
+The idea of this step is to assign lights to clusters based on their view space position. We append lights to the clusters when the range of the light is colliding with the cluster. This mean each light needs a maximum range.
 
+Before looking at the actual code we first need to look at the data sctuctures used to assign the lights to the clusters to understand what's going on:
+
+![Data structures](assets/images/LightAssignmentDataStructures.png)
+
+The first thing we see at the top is the `Global Light List`, which just a simple list that stores all the lights in the scene. The `Tile Light Index Lists` is where we are storing the indices to the lights inside the `Global Light List`. Here we will store light indices grouped by cluster. But we still don't know how these indices relate to their clusters, we will store that information inside the `Light Grid`. This is a buffer with the same number of elements as there are clusters. Each element stores 2 integers, the `offset`, in other words the start index where the light indices start for the perticular cluster, and `size`, the number of indices stored for the current cluster. Using this grid we can access the stored information inside the `Tile Light Index Lists` and use the same index for accessing the `Light Grid` as we do for the cluster AABBs array.
+
+We use such conveluted data structures for storing lights for a few reasons. It is memory efficient, since clusters tend to share the same lights, so we store indices inside the `Tile Light Index Lists`, instead the lights themselves to save memory. This structure also quite nicely works with the GPU and work well in parallel.
+
+Now that we know what data structures we are going to work with, we can take a look at some code. Because again the code is quite big, I removed some unnecessary parts to concisely show the logic of the compute shader for assigning lights.
+
+```glsl
+// Create shared memory for each thread group
+groupshared uint cluster_index;
+groupshared aabb cluster_aabb;
+
+groupshared uint point_light_index_list[max_lights_per_cluster]
+groupshared uint point_light_count;
+groupshared uint point_light_index_offset;
+
+void main(uint group_thread_id, uint group_id)
+{
+    // We let the first thread in the group set up group shared variables
+    if (group_thread_id == 0)
+    {
+        point_light_count = 0;
+        point_light_index_offset = 0;
+
+        cluster_index = compact_active_clusters[group_id];
+        cluster_aabb = clusters_aabb[cluster_index];
+    }
+    
+    // We stall all threads in the group until we know the first thread has set up the values
+    barrier();
+
+    // Cull point lights
+    for (int i = group_thread_id; i < num_point_lights; i += num_threads_in_group)
+    {
+        const point_light point_light = point_lights[i];
+        vec3 light_position_vs = (camera->view * vec4(point_light.position, 1.0f)).xyz;
+        Sphere sphere = { light_position_vs, point_light.range };
+
+        if (intersect_sphere_aabb(sphere, cluster_aabb))
+        {
+            uint index = atomicAdd(point_light_count, 1);
+
+            if(index < max_lights_per_cluster)
+            {
+                point_light_index_list[index] = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    // Wait for all lights to be checked and added to the light list before adding them to the light grid
+    barrier();
+
+    // The first thread in the group updates the light grid
+    if (group_thread_id == 0)
+    {
+        point_light_count = min(point_light_count, max_lights_per_cluster);
+        point_light_index_offset = atomicAdd(global_index_count, point_light_count);
+
+        // Add information for how to access light indices into the light grid for the current cluster
+        light_grid[cluster_index].offset = point_light_index_offset;
+        light_grid[cluster_index].count = point_light_count;
+    }
+
+    // Wait for the first thread in the group to update atomic counter for lights
+    barrier();
+
+    // Add light indices to light tile lights index lists array
+    for (int i = group_thread_id; i < point_light_count; i += num_threads_in_group)
+    {
+        instance->tile_lights_index_lists[point_light_index_offset + i] = point_light_index_list[i];
+    }
+}
+```
+
+We indirectly dispatch this compute shader with the previously mentioned `num_global_active_clusters` variable we made during the Compacting Clusters step. Every thread group operates on 1 cluster and each thread checks their own lights if they are inside the current groups cluster. That way our cache will be nicely laid out for access for each group. Before looping over all the lights, the first thread in the group sets up the variables for the current group. Then every thread checks for collsision with their own lights and adds the indices to a list if we don't exceed the maximum number of lights in a cluster. After the first thread updates the `light grid` information, we again loop using all threads in the group and update the `tile_lights_index_lists`. In between I use memory berriers when threads need to wait for each other to write to memory.
+
+When this compute shader finishes running we will have our data structures ready to for use in our shading pass. We can compute an index from pixels screen position and its depth, the same calculation we did during the Cluster Culling stage, and use it to access the `light grid`.
 
 
 ## Conclusion <a name="conclusion"></a>
