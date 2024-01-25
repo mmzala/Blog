@@ -32,13 +32,11 @@ The Clustered Shading algorithm is based off of [1] [Tiled Shading, researched b
 
 ![Tiled Shading visualization.](assets/images/TiledShadingVisualization.png)
 
-// TODO: Point out issues with Tiled Shading
-
-In [2] [*Clustered Shading (*Ola Olsson, Markus Billeter and Ulf Assasson, Clustered Deferred and Forward Shading, 2012*)*](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) we take things further and also subdivide the screen into the 3rd dimension, using 3D cells, also known as clusters. This is an obvious next step based on the issues pointed out before. Here is a visualization of assigning lights into said clusters from a top-down view:
+In [2] [*Clustered Shading (*Ola Olsson, Markus Billeter and Ulf Assasson, Clustered Deferred and Forward Shading, 2012*)*](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) we take things further and also subdivide the screen into the 3rd dimension, using 3D cells, also known as clusters. Here is a visualization of assigning lights into said clusters from a top-down view:
 
 ![Clustered Shading visualization.](assets/images/ClusteredShadingVisualization.png)
 
-In the Tiled Shading visualization you can see that lights effects all the meshes in the depth. For example the red light, even though it is close to the camera, it also is being accounted for the mesh all the way in the back. In the Clustered Shading visualization you can see that we don't have that issue anymore.
+In the Tiled Shading visualization you can see that lights effects all the meshes in the depth. For example the red light, even though it is close to the camera, it also is being accounted for the mesh all the way in the back. When pixels that are close together on the screen have big differences in depth, that is known as a depth discontinuity. But in the Clustered Shading visualization you can see that we don't have that issue anymore, solved by simply subdividing space in the 3rd dimension.
 
 There are number of great benefits about using this rendering technique. You can choose to take the forward rendering or deffered rendering path. We have also changed the classic forward/deffered algorithmic complexity from `O(light * mesh)` to `O(light + mesh)`, since with clustered shading we only perform shading using relevant lights per mesh. There are a few more benefits which I will discuss in the next section.
 
