@@ -125,7 +125,7 @@ The easy solution would be to use Axis Aligned Bounding Boxes (AABBs). We can re
 
  This issue can be solved by using planes to represent the clusters, which [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) did. We can use 4 planes to represent 1 cluster, where a plane in code is made out of a float3 normal and a float disance to origin. This would make a cluster take up a bit more memory. In total 16 floats, instead of 6 float when using AABB's. *In actuality you also need a near and far distances for each cluster when doing the light assignment step for checking collisions, which would add another 2 floats, but those can be computed dynamically from the 4 planes we are storing.* Such clusters would look like this:
 
-![Plane clusters.](assets/images/PlaneClusters.png)
+<img src="assets/images/PlaneClusters.png" alt="Plane based clusters."/>
 
 You can see the overlap is gone, but you need to store more memory. Both cluster creation and the light assignment steps also become more complicated, since you have to check collisions with clusters based on their planes.
 
