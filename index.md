@@ -19,7 +19,7 @@ For the past 2 months, during my studies at [Breda University of Applied Science
 
 ## Theory <a name="theory"></a>
 
-*Rendering thousands of dynamic lights in real-time... Optimizizing as much as possible... Squeezing as much performance as possible from the hardware...*
+*Rendering thousands of dynamic lights in real-time... Optimizing as much as possible... Squeezing as much performance as possible from the hardware...*
 
 The Real-Time rendering field has been striving to improve image quality for decades. Modern rendering engines are capable of rendering beautiful scenes. One reason for that is the increase of computational power of our hardware. But without software optimization it wouldn't be possible to render such images quickly.
 
@@ -42,7 +42,7 @@ In [2] [*Clustered Shading (*Ola Olsson, Markus Billeter and Ulf Assasson, Clust
 
 In the Tiled Shading visualization you can see that lights effects all the meshes in the depth. For example the red light, even though it is close to the camera, it also is being accounted for the mesh all the way in the back. When pixels that are close together on the screen have big differences in depth, that is known as a depth discontinuity. But in the Clustered Shading visualization you can see that we don't have that issue anymore, solved by simply subdividing space in the 3rd dimension.
 
-There are number of great benefits about using this rendering technique. You can choose to take the forward rendering or deffered rendering path. We have also changed the classic forward/deffered algorithmic complexity from `O(light * mesh)` to `O(light + mesh)`, since with clustered shading we only perform shading using relevant lights per mesh. There are a few more benefits which I will discuss in the next section.
+There are a number of great benefits about using this rendering technique. You can choose to take the forward rendering or deferred rendering path. We have also changed the classic forward/deferred algorithmic complexity from `O(light * mesh)` to `O(light + mesh)`, since with clustered shading we only perform shading using relevant lights per mesh. There are a few more benefits which I will discuss in the next section.
 
 ### Comparing rendering algorithms <a name="theory2"></a>
 
