@@ -23,7 +23,7 @@ Nowdays commertial game-engines use multi-threading heavily to support playable 
 
 ### A brief background of multi-processing <a name="theory1"></a>
 
-The multi-processor industry in 2004 encountered a problem with heat dissipation, which prevented them from producing faster CPUs. In turn, the multi-processor manufacturers shifted their focus to producing multi-processor CPUs. This switch had effect on the Moore's Law, which predicts an approximate doubling in transistor counts every 18 to 24 months. And that statement still holds true today. But in 2004 its assumed correlation with with doubling processor speeds was shown to be no longer valid, as single threaded performance advencements started to dissipate.
+The multi-processor industry in 2004 encountered a problem with heat dissipation, which prevented them from producing faster CPUs. In turn, the multi-processor manufacturers shifted their focus to producing multi-processor CPUs. This switch had effect on the Moore's Law, which predicts an approximate doubling in transistor counts every 18 to 24 months. And that statement still holds true today. But in 2004, its assumed correlation with with doubling processor speeds was shown to be no longer valid, as single threaded performance advencements started to dissipate.
 
 <p align="center">
 <img src="assets/images/multi-threading-fibers/TransistorCountOverTheYears.png" alt="Transistor count over the years."/>
@@ -33,7 +33,17 @@ As a result of this switch to multi-core systems, the game engines at the time t
 
 ### Multi-threading game loops <a name="theory2"></a>
 
+#### Fork And Join
+
 ...
+
+#### One Thread Per Subsystem
+
+...
+
+#### Jobs
+
+....
 
 ### Fibers... What are they? <a name="theory3"></a>
 
