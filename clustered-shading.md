@@ -33,13 +33,13 @@ There are countless of optimizations one could implement. However now we will be
 The Clustered Shading algorithm is based off of [1] [Tiled Shading, researched by Ola Olsson and Ulf Assarsson](https://www.cse.chalmers.se/~uffe/tiled_shading_preprint.pdf). The Tiled Shading algorithm efficiently culls lights for both forward and deferred systems. The idea is that we subdivide the screen into tiles and build a buffer which keeps track of what lights affects the geometry within a given tile. During the shading pass we compute only the lights within the current tile. This significantly reduces the number of lights that we need to compute for. [3] [Ángel Ortiz, who also made a blog post about clustered shading, created great visualizations for Tiled and Clustered Shading, which I have used. Check out his blog post as well!](https://www.aortiz.me/2018/12/21/CG.html) Here is a visualization of assigning lights into tiles:
 
 <p align="center">
-<img src="assets/images/TiledShadingVisualization.png" alt="Tiled Shading visualization."/>
+<img src="assets/images/clustered-shading/TiledShadingVisualization.png" alt="Tiled Shading visualization."/>
 </p>
 
 In [2] [*Clustered Shading (*Ola Olsson, Markus Billeter and Ulf Assasson, Clustered Deferred and Forward Shading, 2012*)*](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) we take things further and also subdivide the screen into the 3rd dimension, using 3D cells, also known as clusters. Here is a visualization of assigning lights into said clusters from a top-down view:
 
 <p align="center">
-<img src="assets/images/ClusteredShadingVisualization.png" alt="Clustered Shading visualization."/>
+<img src="assets/images/clustered-shading/ClusteredShadingVisualization.png" alt="Clustered Shading visualization."/>
 </p>
 
 In the Tiled Shading visualization you can see that lights effects all the meshes in the depth. For example the red light, even though it is close to the camera, it also is being accounted for the mesh all the way in the back. When pixels that are close together on the screen have big differences in depth, that is known as a depth discontinuity. But in the Clustered Shading visualization you can see that we don't have that issue anymore, solved by simply subdividing space in the 3rd dimension.
@@ -94,19 +94,19 @@ To create the clusters we will be using the same way the tile are created for Ti
 [2] [The original Clustered Shading paper](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) showed 3 subdivision schemes. The first way of subdividing depth the paper described is to do it in normalized device coordinates into a set of uniform segments. However, because of non-linearity of NDC, this subdivision results in uneven cluster dimensions. Which means clusters close to the camera become very thin and those far away very long. We would generally like for the clusters to not have too many lights and for them to be evenly distributed to achieve best results.
 
 <p align="center">
-<img src="assets/images/ZSubdivision/UniformNDC.png" alt="Uniform NDC subdivision."/>
+<img src="assets/images/clustered-shading/ZSubdivision/UniformNDC.png" alt="Uniform NDC subdivision."/>
 </p>
 
 The next subdivision the paper showed is uniform subdivision in view space. But this actually produces the opposite artifact, where clusters near the camera are long and narrow and those far away are wide and flat.
 
 <p align="center">
-<img src="assets/images/ZSubdivision/UniformVS.png" alt="Uniform view space subdivision."/>
+<img src="assets/images/clustered-shading/ZSubdivision/UniformVS.png" alt="Uniform view space subdivision."/>
 </p>
 
 The third subdivision of the paper was an exponential subdivision in view space, which the paper settled on. By spacing the divisions exponentially, we achieve self-similar subdivisions, such that the clusters become as cubical as possible. Which works nicely when representing clusters as AABB's and gets rid of the problems the previous 2 approches had.
 
 <p align="center">
-<img src="assets/images/ZSubdivision/ExponentialVS.png" alt="Exponential view space subdivision."/>
+<img src="assets/images/clustered-shading/ZSubdivision/ExponentialVS.png" alt="Exponential view space subdivision."/>
 </p>
 
 But in the end I decided to use another subdivision scheme. When researching this topic I came across how [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) has done depth subdivision for their clusters:
@@ -132,7 +132,7 @@ Now that we have chosen our subdivision scheme, it's time to look at what shape 
 The easy solution would be to use Axis Aligned Bounding Boxes (AABBs). We can represent such a shape with only 2 float3's, a min and max point, which makes this solution good regarding bandwidth. In this case, in order to assign lights to clusters, we need to check collision between a cube and a sphere, which also keeps the algorithm pretty simple. But there is an issue with using AABBs.
 
 <p align="center">
-<img src="assets/images/AABBClusterOverlap.png" alt="AABB clusters overlap."/>
+<img src="assets/images/clustered-shading/AABBClusterOverlap.png" alt="AABB clusters overlap."/>
 </p>
 
  When we visualize the clusters in 2D, we can see that the AABBs need to overlap to cover the whole cluster. This makes AABBs not that accurate and leads to lights being assigned to clusters that don't need to be assigned to and clusters not being culled away while there is no need for them. That means that more pixels can potentially take into account lights that don't contribute to the pixel's final color.
@@ -140,7 +140,7 @@ The easy solution would be to use Axis Aligned Bounding Boxes (AABBs). We can re
  This issue can be solved by using planes to represent the clusters, which [4] [Doom 2016](https://advances.realtimerendering.com/s2016/Siggraph2016_idTech6.pdf) did. We can use 4 planes to represent 1 cluster, where a plane in code is made out of a float3 normal and a float disance to origin. This would make a cluster take up a bit more memory. In total 16 floats, instead of 6 float when using AABB's. *In actuality you also need a near and far distances for each cluster when doing the light assignment step for checking collisions, which would add another 2 floats, but those can be computed dynamically from the 4 planes we are storing.* Such clusters would look like this:
 
 <p align="center">
-<img src="assets/images/PlaneClusters.png" alt="Plane based clusters."/>
+<img src="assets/images/clustered-shading/PlaneClusters.png" alt="Plane based clusters."/>
 </p>
 
 You can see the overlap is gone, but you need to store more memory. Both cluster creation and the light assignment steps also become more complicated, since you have to check collisions with clusters based on their planes.
@@ -259,7 +259,7 @@ The idea of this step is to assign lights to clusters based on their view space 
 Before looking at the actual code we first need to look at the data sctuctures used to assign the lights to the clusters to understand what's going on:
 
 <p align="center">
-<img src="assets/images/LightAssignmentDataStructures.png" alt="Data structures."/>
+<img src="assets/images/clustered-shading/LightAssignmentDataStructures.png" alt="Data structures."/>
 </p>
 
 The first thing we see at the top is the `Global Light List`, which just a simple list that stores all the lights in the scene. The `Tile Light Index Lists` is where we are storing the indices to the lights inside the `Global Light List`. Here we will store light indices grouped by cluster. But we still don't know how these indices relate to their clusters, we will store that information inside the `Light Grid`. This is a buffer with the same number of elements as there are clusters. Each element stores 2 integers, the `offset`, in other words the start index where the light indices start for the perticular cluster, and `size`, the number of indices stored for the current cluster. Using this grid we can access the stored information inside the `Tile Light Index Lists` and use the same index for accessing the `Light Grid` as we do for the cluster AABBs array.
@@ -361,7 +361,7 @@ If you want to investigate such a BVH further, I recommend [5] [Jeremiah van Oos
 Another thing the [2] [original paper](https://www.cse.chalmers.se/~uffe/clustered_shading_preprint.pdf) touches upon is additionaly to positions, also using normals in the clustering algorithm. Clustering on normals improves culling of lights during the light assignment pass. This is because when using normals, we can additionally do back-face culling of light against clusters. This leaves out lights that are behind meshes and do not contribute light during the shading pass.
 
 <p align="center">
-<img src="assets/images/PositionAndNormalBasedClustering.jpg" alt="Positional and normal based clustering."/>
+<img src="assets/images/clustered-shading/PositionAndNormalBasedClustering.jpg" alt="Positional and normal based clustering."/>
 </p>
 
 One of the authors of the original paper, Ola Olsson, also did some talks about Clustered Shading and its uses. One of the more interesting talks can be found on Youtube where aside from going into detail of Clustered Shading, he also talks about efficient shadows for many lights.
@@ -386,4 +386,4 @@ During [4] [Siggraph 2016, Tiago Sousa and Jean Geffroy did a talk about graphic
 ---
 *If you have gotten this far I would like to thank you for spending your time to read my first ever blog post. Feel free to reach out through my e-mail (marcinzal24@gmail.com) with any questions or comments. But you can also find me on [LinkedIn](https://www.linkedin.com/in/marcin-zalewski-6a17231a4/) if you would rather reach out to me that way.*
 
-![Breda University of Applied Siences](assets/images/BUASLogo.png)
+![Breda University of Applied Siences](assets/images/clustered-shading/BUASLogo.png)
