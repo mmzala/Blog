@@ -1,5 +1,5 @@
 title: A Programmer's Blog
 description: Marcin Zalewski
 show_downloads: false
-google_analytics:
+google_analytics: false
 theme: jekyll-theme-cayman
