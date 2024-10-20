@@ -4,7 +4,7 @@ title: A Programmer's Blog
 description: Marcin Zalewski
 ---
 
-## [Multi-Threading Using Fibers](./multi-threading-fibers.html) - *November 1, 2024*
+## [Multi-Threading And Fibers](./multi-threading-fibers.html) - *November 1, 2024*
 
 A post with my findings about multi-threading in game engines.
 
