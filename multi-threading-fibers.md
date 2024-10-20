@@ -43,14 +43,19 @@ The idea here is to divide the work into smaller chunks, distribute these onto t
 
 <figure align="center" class="image">
 <img src="assets/images/multi-threading-fibers/JoinAndFork.jpg" alt="Join and Fork diagram."/>
-<figcaption> Join and Fork diagram, showcasing how tasks are distributed </figcaption>
+<figcaption> Join and Fork architecture </figcaption>
 </figure>
 
 We can see that the master thread forks the task into 3 processes, 2 of them being other threads. And later on the processes join and the master thread again forks into 4 tasks until they are completed and joins again. In this case the master thread is doing a part of the work we want to do, but it is also possible to let the entirety of the work to be done by other threads and let the master thread do some other work in the mean time, for example preparing for or even doing the next fork. Also notice how I have named the thread that is dividing up the work "master thread", this is because the forking doesn't have to be done by the main thread of the program and multiple forks can be done one after the other to later be joined together.
 
 #### One Thread Per Subsystem
 
-...
+Another famous approach to multitasking is to assign engine subsystems to their own cores. The main thread controls and synchronizes the operations of these major subsystems threads and also continues to handle a share of the engines high level-logic. On hardware with multiple physical CPUs or cores, this approach allows these subsystems to execute in parallel. This design is well suited for subsystems that do relatively isolated work, for example the renderer or the audio engine. We can depict such an architecture with the following diagram.
+
+<figure align="center" class="image">
+<img src="assets/images/multi-threading-fibers/OneThreadPerSubsystem.jpg" alt="One thread per subsystem diagram."/>
+<figcaption> One thread per subsystem architecture </figcaption>
+</figure>
 
 #### Jobs
 
