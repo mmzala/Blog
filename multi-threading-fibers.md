@@ -57,6 +57,8 @@ Another famous approach to multitasking is to assign engine subsystems to their 
 <figcaption> One thread per subsystem architecture </figcaption>
 </figure>
 
+One problem with this approach is that each thread represents their own course-grained chunk of work, for example all physics calculations. This puts a restriction on how the various cores can be utilized. If one of the subsystems has not completed its work, the progress of other threads may be blocked. Or if one subsystem has no work to do at the moment, and just sleeps, it doesn't utilize its thread to the fullest and could run other calculations in the background, such as the beginning of the Dynamics Thread seen in the diagram above.
+
 #### Jobs
 
 ....
