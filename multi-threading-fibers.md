@@ -34,7 +34,7 @@ As a result of this switch to multi-core systems, the game engines at the time t
 
 ### Multi-threading game loops <a name="theory2"></a>
 
-...
+Commercial game engines have opted for different patterns when implementing multi-threading into their applications. We will take a look at the 3 most popular approaches used.
 
 #### Fork And Join
 
