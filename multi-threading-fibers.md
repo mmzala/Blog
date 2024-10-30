@@ -112,7 +112,7 @@ jobSystem.RunJobs(jobs, numJobs, &counter);
 jobSystem.WaitForCounter(&counter);
 ```
 
-The user makes job declarations using a function pointer and any parameters the function takes. The user then creates a counter and runs the jobs. The counter is used to synchronize our program when calling `WaitForCounter()`. Now that we have an idea how the user side of the code looks like, let's take a look at the inside.
+The user makes job declarations using a function pointer and any parameters the function takes. The user then creates a counter and runs the jobs. The counter, which is just an atomic integer, is used to synchronize our program when calling `WaitForCounter()`. Now that we have an idea how the user side of the code looks like, let's take a look at the inside.
 
 #### The implementation side
 
@@ -182,17 +182,210 @@ Only fibers can yield to fibers, but when the program starts up, there are no fi
 
 The `SwitchToFiber()` function is when the state of execution is saved into the fiber for later resumption. After it is saved, the switch to the other fiber actually happens. When we switch back to a fiber with the saved state, it resumes execution from the the next line after `SwitchToFiber()`. This switching of fibers allows us to chain fiber switching together with as many fibers as we want.
 
-Next up, let's see how we can use this inside our job system.
+### Initializing the job system <a name="implementation3"></a>
 
-### Initializing the job system
+Now that we have basic understanding of how to implement fibers, we can start using them to create a job system.
 
+```cpp
+JobSystem::JobSystem(const Args& args)
+	:
+	mThreads(args.mNumThreads),
+	mFiberPool(args.mNumFibers),
+	mJobQueue(args.mQueueSize)
+{
+	for (int i = 0; i < mThreads.size(); ++i)
+	{
+		mThreads[i] = std::thread(ThreadWorkerEntry, this);
 
+		// Set affinity
+		HANDLE handle = reinterpret_cast<HANDLE>(mThreads[i].native_handle());
+		DWORD_PTR affinityMask = DWORD_PTR(1) << i;
+		DWORD_PTR result = SetThreadAffinityMask(handle, affinityMask);
+		assert(result != 0 && "Failed while setting thread affinity");
+	}
+
+	for (int i = 0; i < mFiberPool.Capacity(); ++i)
+	{
+		mFiberPool.PushBack(CreateFiber(args.mFiberStackSize, FiberWorkerEntry, this));
+	}
+}
+```
+
+We first create all the threads that will run the fibers and set their affinity to their own dedicated cores. We then create all of the fibers that will run the jobs. To store the fibers I use a custom thread safe ring buffer, which makes it easier for me to pop and push fibers when needed across different threads.
+
+### Running Jobs <a name="implementation4"></a>
+
+The user requests the jobs to by run using the `RunJobs()` function. This function pushes the job into an atomic ring buffer.
+
+```cpp
+void JobSystem::RunJobs(JobDecl* jobs, uint32_t numOfJobs, Counter* counter)
+{
+	assert(jobs != nullptr && "Jobs always has to be present when running jobs... duh...");
+	assert(counter != nullptr && "Counter always has to be present when running jobs");
+
+	*counter = numOfJobs;
+
+	for (uint32_t i = 0; i < numOfJobs; ++i)
+	{
+		jobs[i].mCounter = counter;
+		mJobQueue.PushBack(jobs[i]);
+	}
+}
+```
+
+This job is then picked up by a fiber on a thread. When a thread is spawned during the initialization, it start executing the `ThreadWorkerEntry()` function, which converts the thread into a fiber. Because the thread now acts like a fiber, we can start running the same logic as for other worker fibers created using `FiberWorkerEntry()`. That is the same function that every fiber will execute when switched to from the fiber pool.
+
+```cpp
+void JobSystem::FiberWorkerEntry(void* userData)
+{
+	JobSystem& jobSystem = *reinterpret_cast<JobSystem*>(userData);
+
+	while (!jobSystem.IsShuttingDown())
+	{
+		if (tFiberToBeUnlockedAfterSwitch != nullptr)
+		{
+			tFiberToBeUnlockedAfterSwitch->lock.Unlock();
+			tFiberToBeUnlockedAfterSwitch = nullptr;
+		}
+
+		std::optional<JobDecl> job = jobSystem.mJobQueue.PopFront();
+
+		if (job.has_value())
+		{
+			FiberJobEntry(job.value(), jobSystem);
+		}
+		else
+		{
+			_mm_pause();
+		}
+	}
+}
+```
+
+We run this function until the job system is requested to shut down. We also define a `thread_local` variable, which tells the fiber to unlock it's atomic lock after switching to another fiber. We will talk in more detail about it when discussing waiting for counters. If a job is found, we execute it, otherwise we use the `_mm_pause()` function, which tells the processor that the calling thread is in a "spin-wait" loop. This will pause the next instruction from executing and in so doing the processor is not under demand and parts of the pipeline will not be used, thus saving power.
+
+The `FiberJobEntry` executes the job, decrements the counter and checks if a job that waits on the counter can be resumed, using the wait list.
+
+```cpp
+void JobSystem::FiberJobEntry(JobDecl job, JobSystem& system)
+{
+	job.mFunction(job.mParam);
+	Counter* counter = job.mCounter;
+
+	(*counter)--;
+
+	if (*counter == 0)
+	{
+		system.mWaitListLock.Lock();
+		auto itr = system.mWaitList.find(counter);
+
+		// If counter is decremented before JobSystem::WaitForCounter() adds fiber to wait list,
+		// or after fiber was added to wait list, but also after the WaitForCounter() noticed, 
+		// that counter is 0 and already removed itself from wait list. 
+		// This situation is going to be detected in fiber that called JobSystem::WaitForCounter(),
+		// so here, we just release mWaitListLock.
+		if (itr == system.mWaitList.end())
+		{
+			system.mWaitListLock.Unlock();
+			return;
+		}
+
+		UsedFiber* awaitingFiber = itr->second;
+		assert(awaitingFiber->fiber != nullptr);
+		system.mWaitList.erase(counter);
+		system.mWaitListLock.Unlock(); // We have to release it before we try to obtain the lock on fiber in order to avoid deadlock
+
+		// When we call RunJobs and then WaitForCounter somewhere else, 
+		// awaiting fiber (added to wait list) could have still not switched to
+		// another fiber from pool, so we spin until that happens
+		awaitingFiber->lock.Lock();
+		// And immediately unlock, because awaitingFiber is now truly awaiting and it was the only purpose of this lock
+		awaitingFiber->lock.Unlock();
+
+		// Save current fiber to be added to fiber pool after switch is done
+		tFiberToBeAddedToPool = tCurrentFiber;
+		tCurrentFiber = awaitingFiber->fiber;
+		// Switch to fiber pulled from wait list
+		SwitchToFiber(awaitingFiber->fiber);
+
+		// We push previous fiber to fiber pool only if we were on wait list and we came back from it.
+		// Here, we weren't, so we are back again only because someone else got pushed to wait list,
+		// so we can't add him to the pool, so tFiberToBeAddedToPool has to be nullptr
+		assert(tFiberToBeAddedToPool == nullptr);
+		assert(tCurrentFiber != nullptr);
+	}
+}
+```
+
+We first execute the actual function and decrement it's associated counter. If the counter is 0, we know that we can check the wait list for any jobs that depend on that counter and can be resumed. The wait list is just an `std::unordered_map` with the counter pointer as the key and the fiber as the value. We also save the current fiber to later push it back into the available fiber ring buffer. There are a couple atomic locks placed in this function as well, which I hope become clear after we discuss the `WaitForCounter` function, which we will do in the next section.
+
+### Waiting for jobs <a name="implementation5"></a>
+
+Our last piece of the puzzle is waiting for the counter after queuing jobs we want to run. This happens in the `WaitForCounter` function.
+
+```cpp
+void JobSystem::WaitForCounter(Counter* counter)
+{
+	assert(counter != nullptr && "Counter always has to be present when waiting for it...");
+
+	UsedFiber usedFiber{ tCurrentFiber };
+	usedFiber.lock.Lock();
+
+	// Add itself to the wait list
+	assert(tCurrentFiber != nullptr);
+	mWaitListLock.Lock();
+	mWaitList[counter] = &usedFiber;
+	mWaitListLock.Unlock();
+
+	if (*counter == 0)
+	{
+		std::lock_guard<SpinLock> guard(mWaitListLock);
+
+		// We are here in one of 2 scenarios:
+		// 1. Jobs was completed before we added ourselves to wait list, or jobs were completed after we added ourselves to wait list, 
+		// but last job didn't take a mWaitListLock before us, so we just remove ourselves from wait list and continue execution.
+		// 2. Jobs were completed after we added ourselves to wait list and last job took mWaitListLock before us removed us from wait list,
+		// and now it's spinning on StatefullFiber::m_lock, that means we have to switch to a free fiber, 
+		// so we go to another fiber and then releasing fiber lock as fast as possible.
+
+		auto itr = mWaitList.find(counter);
+
+		if (itr != mWaitList.end())
+		{
+			// 1. Jobs were already completed, we remove ourselves from wait list and continue execution
+			mWaitList.erase(counter);
+			return;
+		}
+
+		// 2. Counter not equal to 0 has the same logic
+	}
+
+	std::optional<FiberHandle> workerFiber = mFiberPool.PopFront();
+	assert(workerFiber.has_value() && "No more fibers available!");
+	tCurrentFiber = workerFiber.value();
+
+	// Fiber we switch to will unlock the lock on UsedFiber in FiberWorkerEntry
+	tFiberToBeUnlockedAfterSwitch = &usedFiber;
+
+	SwitchToFiber(workerFiber.value());
+
+	// Fiber is done with work, so we are back, now add fiber that we switched from to fiber pool, set it to nullptr afterwards.
+	// tFiberToBeUnlockedAfterSwitch cannot be null, because we can get here only when someone pulled us
+	// from wait list and then switched to us, so we have to add previous fiber to the fiber pool.
+	assert(tCurrentFiber != nullptr);
+	assert(tFiberToBeAddedToPool != nullptr);
+	mFiberPool.PushBack(tFiberToBeAddedToPool);
+	tFiberToBeAddedToPool = nullptr;
+}
+```
+
+To make use of the wait list we create a `UsedFiber` object, which is just a pair of a fiber and a atomic lock. The atomic lock is used to signal inside the `FiberJobEntry` that we switched to another fiber from the fiber pool. After, we add the currently used fiber to the wait list and pull a new fiber to switch to, which will run the `FiberJobEntry` function, to run the next job in the queue. After we switch back to this fiber, we will no longer use it, so we add it back to the pool of available fibers. 
+
+When calling `WaitForCounter()`, there is a chance the jobs associated with the counter have already completed their work and were not removed from the wait list. In that case we can just remove it from the wait list and continue with the current fiber that is being executed.
 
 ### Mutex vs Spin Lock
 
 ...
-
-### 
 
 ## Conclusion <a name="conclusion"></a>
 
@@ -206,7 +399,9 @@ Next up, let's see how we can use this inside our job system.
 
 - [1] [*Douglas Herz. A Century of Moore’s Law, Febrary 04, 2023*](https://www.semianalysis.com/p/a-century-of-moores-law)
 - [2] [*Jason Gregory. Game Engine Archiechure 3th edition, August 17, 2018*](https://www.gameenginebook.com)
-- [2] [*Christian Gyrling. Parallelizing the Naughty Dog Engine Using Fibers, March 2-6, 2015*](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s)
+- [3] [*Christian Gyrling. Parallelizing the Naughty Dog Engine Using Fibers, March 2-6, 2015*](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s)
+- [4] [*Chris Wellons. Fibers: the Most Elegant Windows API, March 28, 2019*](https://nullprogram.com/blog/2019/03/28/)
+- [5] [*Intel.com. Architecture Agnostic Spin-Wait Loops, April 26, 2018*](https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html#:~:text=The%20_mm_pause%20instruction%20is%20used,in%20a%20spin-wait%20loop)
 
 ---
 *If you see this, I would like to thank you for keeping with my blog post until the end. You can find more of my blog posts at the [main page](https://mmzala.github.io/blog/). Feel free to reach out through my e-mail (marcinzal24@gmail.com) with any questions or comments. You can also find me on [LinkedIn](https://www.linkedin.com/in/marcin-zalewski-6a17231a4/) if you would rather reach out to me that way.*
