@@ -27,7 +27,7 @@ The processor manufacturing industry in 2004 encountered a problem with heat dis
 
 <figure align="center" class="image">
 <img src="assets/images/multi-threading-fibers/TransistorCountOverTheYears.png" alt="Transistor count over the years."/>
-<figcaption> <a href="https://www.semianalysis.com/p/a-century-of-moores-law"> Transistor count over the years. Douglas Herz. A Century of Moore’s Law, Febrary 04, 2023 </a> </figcaption>
+<figcaption> <a href="https://www.semianalysis.com/p/a-century-of-moores-law"> Transistor count over the years. Douglas Herz. A Century of Moore’s Law, February 04, 2023 </a> </figcaption>
 </figure>
 
 As a result of this switch to multi-core systems, the game engines at the time turned to parallel processing techniques. This can be seen with systems such as the Xbox 360 and PlayStation 3, where the game engines no longer relied on a single main game loop to service their subsystems. Designing multi-threaded programs is much harder than single-threaded ones. Most game companies took a few years to switch their game engines to completely utilize multi-threading. They transformed the engines step by step, where they selected subsystems and parallelized them. By 2008, most commercial game engines had completed their turn to multi-processing, with different approaches and varying degrees of parallelism.
@@ -85,11 +85,114 @@ There are more things to explore, which we will take a look at with more detail 
 
 ## Implementation <a name="implementation"></a>
 
+While there are many different ways to implement a job system, we'll be focusing on implementing a system inspired by the [Naughty Dogs fiber based job system](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s). First let's talk about the design on the system we want to implement.
+
+### Designing a fiber based job system <a name="implementation1"></a>
+
+#### The user side
+
+The job system will have a simple API, where the user will create the job system and will be able to use it in the following way:
+
+```cpp
+// Create the job definitions
+const uint32_t numJobs = 100;
+JobDecl jobs[numJobs];
+
+// Fill them in using the entry point and parameter
+for (int i = 0; i < numJobs; ++i)
+{
+    jobs[i] = JobDecl(function, params);
+}
+
+// Schedule all jobs and create a counter that you can wait for
+Counter counter{};
+jobSystem.RunJobs(jobs, numJobs, &counter);
+
+// Wait for all jobs by waiting for the counter to be zero
+jobSystem.WaitForCounter(&counter);
+```
+
+The user makes job declarations using a function pointer and any parameters the function takes. The user then creates a counter and runs the jobs. The counter is used to synchronize our program when calling `WaitForCounter()`. Now that we have an idea how the user side of the code looks like, let's take a look at the inside.
+
+#### The implementation side
+
+We'll spawn a specified amount of threads and lock them with affinity to a given core. This tells the OS's scheduler where exactly our threads want to run. The threads will be the execution units, which will run fibers. And each fiber runs it's own job, which the fiber will pull from a queue of jobs that have been added using the above mentioned `RunJobs` call.
+
+But how is that any different from using a job system that solely uses threads to run jobs? To leverage the functionality of the fiber possessing their own stack memory, we are able to create jobs inside other jobs, which gives us the freedom to jobify our program heavily in an easy way by chaining jobs one after the other inside each other. To achieve this, the job system will make use of a wait list, where all the waiting jobs associated with a counter will be inserted. This happens when the user calls `WaitForCounter()`, this call means that the user wants to make sure the jobs requested to be run are complete. That means the current executing fiber will be put into the wait list, and a new fiber will be used to run the next jobs in the queue. When the job completes the counter decrements and when it reaches zero, all the jobs are done associated with the counter and we can return to the previous fiber waiting in the wait list to continue the functions execution where the `WaitForCounter()` call was made. I help explain this concept, let's take a look at a diagram.
+
+<figure align="center" class="image">
+<img src="assets/images/multi-threading-fibers/WaitListDiagram.jpg" alt="Wait list diagram."/>
+<figcaption> Job system using the wait list to execute job dependencies </figcaption>
+</figure>
+
+### Using Fibers <a name="implementation2"></a>
+
+Now that we have an overview of what we need to create our job system, let's take a look at actually using fibers in code. Thankfully Windows provides a really simple API for us, which becomes available with the `windows.h` header.
+
+```cpp
+#include <windows.h>
+
+
+void FiberWorkEntry(void* parentFiber)
+{
+    printf("Executing fiber.\n");
+
+    // We save the registers to save our state and switch back
+    SwitchToFiber(parentFiber);
+
+    printf("Finished executing fiber.\n");
+}
+
+void Main()
+{
+    uint32_t fiberStackSize = 1024;
+
+    // Convert current thread to fiber
+    void* threadFiber = ConvertThreadToFiber(nullptr);
+
+    // Create fiber to run
+    void* fiber1 = CreateFiber(fiberStackSize, FiberWorkEntry, threadFiber);
+
+    // Switch to fiber that executes `FirstFiberWorkEntry` function
+    SwitchToFiber(fiber1);
+
+    printf("Back to thread fiber.\n");
+
+    // Switch back to fiber1 again to execute the last part of the function
+    SwitchToFiber(fiber1);
+
+    printf("Finished work.\n");
+
+    // Clean up fibers
+    DeleteFiber(fiber1);
+    ConvertFiberToThread();
+}
+```
+
+The program above will five us the following output:
+
+```
+Executing fiber.
+Back to thread fiber.
+Finished executing fiber.
+Finished work.
+```
+
+Only fibers can yield to fibers, but when the program starts up, there are no fibers. So the thread must first convert itself into a fiber using `ConvertThreadToFiber()`, which returns the fiber object that represents itself. It takes one argument analogous to the last argument of `CreateFiber()`, except that there’s no entry point and parameters to accept. The process is reversed with `ConvertFiberToThread()`.
+
+The `SwitchToFiber()` function is when the state of execution is saved into the fiber for later resumption. After it is saved, the switch to the other fiber actually happens. When we switch back to a fiber with the saved state, it resumes execution from the the next line after `SwitchToFiber()`. This switching of fibers allows us to chain fiber switching together with as many fibers as we want.
+
+Next up, let's see how we can use this inside our job system.
+
+### Initializing the job system
+
+
+
+### Mutex vs Spin Lock
+
 ...
 
-### Using Fibers <a name="implementation1"></a>
-
-...
+### 
 
 ## Conclusion <a name="conclusion"></a>
 
