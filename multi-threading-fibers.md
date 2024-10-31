@@ -43,7 +43,7 @@ Commercial game engines have opted for different patterns when implementing mult
 
 #### Fork And Join
 
-One of utilizing the multi-core hardware is to use the so called divide-and-conquer algorithms, often called fork and join. 
+One way of utilizing the multi-core hardware is to use the so called divide-and-conquer algorithms, often called fork and join. 
 The idea here is to divide the work into smaller chunks, distribute these onto the hardwares cores (fork), and merge the results once all of the smeller work chunks have been completed (join). In practice this looks similar to a single-threaded approach, but with some major parts being parallelized. Let's take a look at a visual example.
 
 <figure align="center" class="image">
