@@ -4,7 +4,7 @@ title: Multi-Threading And Fibers - Game Engine Study
 description: Marcin Zalewski - November 1, 2024
 ---
 
-For a while now I have been interested in multi-threading and when I discovered fibers I got the last push I needed to start my experience with it. During my self-study time at [Breda University of Applied Sciences](https://www.buas.nl), for the last 2 months, I have been learning about multi-threading. Throughout this blog post I'll be sharing my findings about multi-processing and implementing a fiber based job system.
+For a while now I have been interested in multi-threading, and when I discovered fibers, I got the last push I needed to start my experience with it. During my self-study time at [Breda University of Applied Sciences](https://www.buas.nl), for the last 2 months, I have been learning about multi-threading. Throughout this blog post I'll be sharing my findings about multi-processing and implementing a fiber based job system.
 
 ## Table of contents
 1. [Theory](#theory)
