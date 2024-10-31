@@ -4,7 +4,7 @@ title: Multi-Threading And Fibers - Game Engine Study
 description: Marcin Zalewski - November 1, 2024
 ---
 
-...
+For a while now I have been interested in multi-threading and when I discovered fibers I got the last push I needed to start my experience with it. During my self-study time at [Breda University of Applied Sciences](https://www.buas.nl), for the last 2 months, I have been learning about multi-threading. Throughout this blog post I'll be sharing my findings about multi-processing and implementing a fiber based job system.
 
 ## Table of contents
 1. [Theory](#theory)
@@ -90,7 +90,9 @@ There are more things to explore, which we will take a look at with more detail 
 
 ## Implementation <a name="implementation"></a>
 
-While there are many different ways to implement a job system, we'll be focusing on implementing a system inspired by the [Naughty Dogs fiber based job system](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s). First let's talk about the design on the system we want to implement.
+While there are many different ways to implement a job system, we'll be focusing on implementing a system inspired by the [Naughty Dogs fiber based job system](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s). If you want to take a closer look at the details while following implementation side of the blog post or simply look at it later, my implementation is open source and can be found on GitHub: [Fiber based job system repository.](https://github.com/mmzala/fiber-job-system)
+
+ First let's talk about the design on the system we want to implement.
 
 ### Designing a fiber based job system <a name="implementation1"></a>
 
@@ -438,11 +440,11 @@ When mutexes are putting threads to sleep and waking them up again, need quite a
 
 With plenty of locks that are held for a very short amount of time, the time wasted for constantly putting threads to sleep and waking them up again might decrease runtime performance noticeably. When using spinlocks instead, threads get the chance to take advantage of their full runtime quantum (always only blocking for a very short time period, but then immediately continue their work), leading to much higher processing throughput.
 
-While I have noticed that spinlocks improved the performance of my job system, I didn't have enough time to test thoroughly in every use-case, so there is definitely more to explore for me regarding this.
+While I have noticed that spinlocks improved the performance of my job system, I didn't have enough time to thoroughly test in every use-case, so there is definitely more to explore for me regarding this.
 
 ## Conclusion <a name="conclusion"></a>
 
-Now that we are at the end, I hope you have learned at least a few new things from this blog post. While this is my first ever job system I have made and it's definitely not perfect, I learned a lot throughout my journey to implement it and writing this blog post. And there is a lot more knowledge and experience left to be acquired when it comes to multi-threading, and this post scratched only the surface of what's possible.
+Now that we are at the end, I hope you have learned at least a few new things from this blog post. While this is my first ever job system I have made and it's definitely not perfect, I learned a lot throughout my journey while implementing it and writing this blog post. And there is a lot more knowledge and experience left to be acquired when it comes to multi-threading, and this post scratched only the surface of what's possible.
 
 ### Further reading <a name="conclusion1"></a>
 
