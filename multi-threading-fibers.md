@@ -12,7 +12,12 @@ description: Marcin Zalewski - November 1, 2024
     2. [Multi-threading game loops](#theory2)
     3. [Fibers... What are they?](#theory3)
 2. [Implementation](#implementation)
-    1. [Using Fibers](#implementation1)
+    1. [Designing a fiber based job system](#implementation1)
+    2. [Using Fibers](#implementation2)
+    3. [Initializing the job system](#implementation3)
+    4. [Running Jobs](#implementation4)
+    5. [Waiting for jobs](#implementation5)
+    6. [Atomic locks](#implementation6)
 3. [Conclusion](#conclusion)
     1. [Further reading](#conclusion1)
     2. [Sources](#conclusion2)
@@ -262,7 +267,7 @@ void JobSystem::FiberWorkerEntry(void* userData)
 }
 ```
 
-We run this function until the job system is requested to shut down. We also define a `thread_local` variable, which tells the fiber to unlock it's atomic lock after switching to another fiber. We will talk in more detail about it when discussing waiting for counters. If a job is found, we execute it, otherwise we use the `_mm_pause()` function, which tells the processor that the calling thread is in a "spin-wait" loop. This will pause the next instruction from executing and in so doing the processor is not under demand and parts of the pipeline will not be used, thus saving power.
+We run this function until the job system is requested to shut down. We also define a `thread_local` variable, which tells the fiber to unlock it's atomic lock after switching to another fiber. We will talk in more detail about it when discussing waiting for counters. If a job is found, we execute it, otherwise we use the `_mm_pause()` instruction, which tells the processor that the calling thread is in a "spin-wait" loop. This will pause the next instruction from executing and in so doing the processor is not under demand and parts of the pipeline will not be used, thus saving power.
 
 The `FiberJobEntry` executes the job, decrements the counter and checks if a job that waits on the counter can be resumed, using the wait list.
 
@@ -383,17 +388,77 @@ To make use of the wait list we create a `UsedFiber` object, which is just a pai
 
 When calling `WaitForCounter()`, there is a chance the jobs associated with the counter have already completed their work and were not removed from the wait list. In that case we can just remove it from the wait list and continue with the current fiber that is being executed.
 
-### Mutex vs Spin Lock
+### Atomic locks <a name="implementation6"></a>
 
-...
+While I have explained the main points of how the fiber based job system works and you can skip this part if you don't feel like reading through some theory again. There is still one topic I would like to touch upon, which was used throughout this blog post and is important part of the performance that the job system has, namely, atomic locks.
+
+When you see a `.Lock()` function call in the code, it is a spinlock, which is implemented using a atomic boolean and the `_mm_pause()` instruction mentioned before during the `Running Jobs` section.
+
+```cpp
+class SpinLock
+{
+public:
+	void Lock() 
+	{
+		while (true) 
+		{
+			while (mLock)
+			{
+				_mm_pause();
+			}
+
+			if (!mLock.exchange(true))
+			{
+				break;
+			}
+		}
+	}
+
+	void Unlock() 
+	{
+		mLock.store(false);
+	}
+
+private:
+	std::atomic<bool> mLock = false;
+};
+```
+
+I have used spinlocks instead of just mutexes for a few reasons.
+
+#### The difference between mutex and spinlock
+
+When a thread tries to lock a mutex and it does not succeed, because the mutex is already locked, it will go to sleep, immediately allowing another thread to run. It will continue to sleep until being woken up, which will be the case once the mutex is being unlocked by whatever thread was holding the lock before. When a thread tries to lock a spinlock and it does not succeed, it will continuously retry locking it, until it finally succeeds, thus it will not allow another thread to take its place (however, the OS will forcefully switch to another thread, once the CPU runtime quantum of the current thread has been exceeded).
+
+#### The problem of the mutex
+
+When mutexes are putting threads to sleep and waking them up again, need quite a lot of CPU instructions and thus also take some time. If now the mutex was only locked for a very short amount of time, the time spent in putting a thread to sleep and waking it up again might exceed the time the thread has actually slept by far and it might even exceed the time the thread would have wasted by constantly polling on a spinlock. On the other hand, polling on a spinlock will constantly waste CPU time and if the lock is held for a longer amount of time, this will waste a lot more CPU time and it would have been much better if the thread was sleeping instead.
+
+#### So... When to use spinlocks?
+
+With plenty of locks that are held for a very short amount of time, the time wasted for constantly putting threads to sleep and waking them up again might decrease runtime performance noticeably. When using spinlocks instead, threads get the chance to take advantage of their full runtime quantum (always only blocking for a very short time period, but then immediately continue their work), leading to much higher processing throughput.
+
+While I have noticed that spinlocks improved the performance of my job system, I didn't have enough time to test thoroughly in every use-case, so there is definitely more to explore for me regarding this.
 
 ## Conclusion <a name="conclusion"></a>
 
-...
+Now that we are at the end, I hope you have learned at least a few new things from this blog post. While this is my first ever job system I have made and it's definitely not perfect, I learned a lot throughout my journey to implement it and writing this blog post. And there is a lot more knowledge and experience left to be acquired when it comes to multi-threading, and this post scratched only the surface of what's possible.
 
 ### Further reading <a name="conclusion1"></a>
 
-...
+If you're interested in more, I'll leave a few links where you can further expand your knowledge of this topic. You can also look at the sources I have used, which explain some points in more detail.
+
+Jiayin Cao, a senior graphics programmer at NVIDIA, went into more detail how fibers work under the hood and how to implement them from scratch. It's worth a read if you're interested in low-level programming:
+
+[Fiber in C++: Understanding the Basics](https://agraphicsguynotes.com/posts/fiber_in_cpp_understanding_the_basics/)
+
+If you want to know more about writing elegant multithreaded applications in C++, I would definitely recommend the C++ Concurrency in Action book written by Anthony Williams. It includes explanations about synchronization, designing concurrent code and even debugging multi-threaded application, which I haven't even touched upon in this blog post:
+
+[C++ Concurrency in Action, Second Edition](https://www.amazon.nl/-/en/Anthony-Williams/dp/1617294691)
+
+One more point I have not touched upon in this blog post regarding job systems is job stealing. Job stealing algorithm is a scheduling technique that allows a worker thread to steal subtasks from other workers when it has nothing to do. Manu Sanchez has written a blog post explaining exactly that:
+
+[Lock-free job stealing with modern C++](https://manu343726.github.io/2017-03-13-lock-free-job-stealing-task-system-with-modern-c/)
 
 ### Sources <a name="conclusion2"></a>
 
@@ -402,6 +467,7 @@ When calling `WaitForCounter()`, there is a chance the jobs associated with the 
 - [3] [*Christian Gyrling. Parallelizing the Naughty Dog Engine Using Fibers, March 2-6, 2015*](https://www.youtube.com/watch?v=HIVBhKj7gQU&t=1399s)
 - [4] [*Chris Wellons. Fibers: the Most Elegant Windows API, March 28, 2019*](https://nullprogram.com/blog/2019/03/28/)
 - [5] [*Intel.com. Architecture Agnostic Spin-Wait Loops, April 26, 2018*](https://www.intel.com/content/www/us/en/developer/articles/technical/a-common-construct-to-avoid-the-contention-of-threads-architecture-agnostic-spin-wait-loops.html#:~:text=The%20_mm_pause%20instruction%20is%20used,in%20a%20spin-wait%20loop)
+- [6] [*Jiayin Cao. Fiber in C++: Understanding the Basics, August 26, 2023*](https://agraphicsguynotes.com/posts/fiber_in_cpp_understanding_the_basics/)
 
 ---
 *If you see this, I would like to thank you for keeping with my blog post until the end. You can find more of my blog posts at the [main page](https://mmzala.github.io/blog/). Feel free to reach out through my e-mail (marcinzal24@gmail.com) with any questions or comments. You can also find me on [LinkedIn](https://www.linkedin.com/in/marcin-zalewski-6a17231a4/) if you would rather reach out to me that way.*
